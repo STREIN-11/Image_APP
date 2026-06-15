@@ -7,6 +7,10 @@ from tkinter import ttk, filedialog, scrolledtext
 from urllib.request import urlopen
 from urllib.error import HTTPError
 
+def resource_path(filename):
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, filename)
+
 SCRIPT = "p1CoZQuBy9eP4e8YH0dM5Q"
 SECRET = "6YHiBWbUWEIJMvYt91vuDjOOsCOUOA"
 def download(storage_directory, subreddit_name, sort_type, num_images, clear_existing, log):
@@ -64,14 +68,10 @@ def build_ui():
     root.title("Reddit Image Downloader")
     root.resizable(False, False)
 
-    # Set custom icon - change path to your .ico or .png file
-    icon_path = r"C:\Users\subha\OneDrive\Desktop\Image\HAVI.ico"
+    # Set custom icon
+    icon_path = resource_path("HAVI.ico")
     if os.path.exists(icon_path):
-        if icon_path.endswith(".ico"):
-            root.iconbitmap(icon_path)
-        else:
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
+        root.iconbitmap(icon_path)
 
     pad = {"padx": 10, "pady": 5}
 
