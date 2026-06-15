@@ -9,13 +9,17 @@ from urllib.error import HTTPError
 
 SCRIPT = "p1CoZQuBy9eP4e8YH0dM5Q"
 SECRET = "6YHiBWbUWEIJMvYt91vuDjOOsCOUOA"
-def download(storage_directory, subreddit_name, sort_type, num_images, log):
+def download(storage_directory, subreddit_name, sort_type, num_images, clear_existing, log):
     try:
         os.makedirs(storage_directory, exist_ok=True)
-        os.chdir(storage_directory)
-        for f in os.listdir(storage_directory):
-            os.remove(f)
-        log("Cleared directory. Connecting to Reddit...\n")
+        if clear_existing:
+            for f in os.listdir(storage_directory):
+                fp = os.path.join(storage_directory, f)
+                if os.path.isfile(fp):
+                    os.remove(fp)
+            log("Cleared directory. Connecting to Reddit...\n")
+        else:
+            log("Keeping existing files. Connecting to Reddit...\n")
 
         reddit = praw.Reddit(
             client_id=SCRIPT,
@@ -33,12 +37,14 @@ def download(storage_directory, subreddit_name, sort_type, num_images, log):
         images = [s.url for s in feed(limit=num_images)]
         log(f"Found {len(images)} posts. Downloading...\n")
 
+        existing_count = len([f for f in os.listdir(storage_directory) if os.path.isfile(os.path.join(storage_directory, f))]) if not clear_existing else 0
+
         for i, image in enumerate(images):
             log(f"Downloading {i+1}/{len(images)}: {image}\n")
             try:
                 imgdata = urlopen(image).read()
                 ext = image.split('.')[-1][:4]
-                fname = f"image{i+1}.{ext}"
+                fname = os.path.join(storage_directory, f"image{existing_count + i+1}.{ext}")
                 with open(fname, "wb") as f:
                     f.write(imgdata)
                 if os.stat(fname).st_size < 200000:
@@ -93,9 +99,14 @@ def build_ui():
     ttk.Combobox(root, textvariable=sort_var, values=["hot", "new", "top", "rising"],
                  state="readonly", width=37).grid(row=3, column=1, **pad)
 
+    # Clear existing row
+    clear_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(root, text="Clear existing files before download", variable=clear_var).grid(
+        row=4, column=0, columnspan=2, sticky="w", **pad)
+
     # Log area
     log_box = scrolledtext.ScrolledText(root, width=60, height=15, state="disabled")
-    log_box.grid(row=4, column=0, columnspan=3, **pad)
+    log_box.grid(row=5, column=0, columnspan=3, **pad)
 
     def log(msg):
         log_box.config(state="normal")
@@ -110,14 +121,14 @@ def build_ui():
         log_box.config(state="disabled")
         threading.Thread(
             target=lambda: [
-                download(dir_var.get(), sub_var.get(), sort_var.get(), num_var.get(), log),
+                download(dir_var.get(), sub_var.get(), sort_var.get(), num_var.get(), clear_var.get(), log),
                 btn.config(state="normal"),
             ],
             daemon=True,
         ).start()
 
     btn = tk.Button(root, text="Start Download", command=start, bg="#4CAF50", fg="white", width=20)
-    btn.grid(row=5, column=1, pady=10)
+    btn.grid(row=6, column=1, pady=10)
 
     root.mainloop()
 
