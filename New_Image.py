@@ -4,8 +4,8 @@ import os
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
-from urllib.request import urlopen
-from urllib.error import HTTPError
+from urllib.request import urlopen, Request
+from urllib.error import HTTPError, URLError
 
 def resource_path(filename):
     base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -38,25 +38,27 @@ def download(storage_directory, subreddit_name, sort_type, num_images, clear_exi
             "rising": subreddit.rising,
         }[sort_type]
 
-        images = [s.url for s in feed(limit=num_images)]
-        log(f"Found {len(images)} posts. Downloading...\n")
+        VALID_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+        images = [s.url for s in feed(limit=num_images) if any(s.url.lower().endswith(e) for e in VALID_EXT)]
+        log(f"Found {len(images)} direct image links. Downloading...\n")
 
         existing_count = len([f for f in os.listdir(storage_directory) if os.path.isfile(os.path.join(storage_directory, f))]) if not clear_existing else 0
 
         for i, image in enumerate(images):
             log(f"Downloading {i+1}/{len(images)}: {image}\n")
             try:
-                imgdata = urlopen(image).read()
-                ext = image.split('.')[-1][:4]
+                req = Request(image, headers={"User-Agent": "Mozilla/5.0"})
+                imgdata = urlopen(req, timeout=10).read()
+                ext = image.split('.')[-1][:4].lower()
                 fname = os.path.join(storage_directory, f"image{existing_count + i+1}.{ext}")
                 with open(fname, "wb") as f:
                     f.write(imgdata)
                 if os.stat(fname).st_size < 200000:
                     os.remove(fname)
-            except HTTPError:
-                log(f"  HTTP Error for {image}\n")
-            except (FileNotFoundError, OSError):
-                log(f"  Invalid link: {image}\n")
+            except (HTTPError, URLError) as e:
+                log(f"  Skipped {image}: {e}\n")
+            except (FileNotFoundError, OSError) as e:
+                log(f"  OS Error {image}: {e}\n")
 
         log("Done!\n")
     except Exception as e:
