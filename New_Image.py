@@ -29,6 +29,7 @@ def download(storage_directory, subreddit_name, sort_type, num_images, clear_exi
             client_id=SCRIPT,
             client_secret=SECRET,
             user_agent="Image_Py",
+            check_for_updates=False,
         )
         subreddit = reddit.subreddit(subreddit_name)
         feed = {
@@ -51,8 +52,8 @@ def download(storage_directory, subreddit_name, sort_type, num_images, clear_exi
                 imgdata = urlopen(req, timeout=10).read()
                 ext = image.split('.')[-1][:4].lower()
                 fname = os.path.join(storage_directory, f"image{existing_count + i+1}.{ext}")
-                with open(fname, "wb") as f:
-                    f.write(imgdata)
+                with open(fname, "wb") as fh:
+                    fh.write(imgdata)
                 if os.stat(fname).st_size < 200000:
                     os.remove(fname)
             except (HTTPError, URLError) as e:
@@ -62,7 +63,8 @@ def download(storage_directory, subreddit_name, sort_type, num_images, clear_exi
 
         log("Done!\n")
     except Exception as e:
-        log(f"Error: {e}\n")
+        import traceback
+        log(f"Error: {e}\n{traceback.format_exc()}\n")
 
 
 def build_ui():
@@ -111,10 +113,12 @@ def build_ui():
     log_box.grid(row=5, column=0, columnspan=3, **pad)
 
     def log(msg):
-        log_box.config(state="normal")
-        log_box.insert(tk.END, msg)
-        log_box.see(tk.END)
-        log_box.config(state="disabled")
+        def _update():
+            log_box.config(state="normal")
+            log_box.insert(tk.END, msg)
+            log_box.see(tk.END)
+            log_box.config(state="disabled")
+        root.after(0, _update)
 
     def start():
         btn.config(state="disabled")
