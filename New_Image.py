@@ -4,23 +4,32 @@ import os
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
-from urllib.request import urlopen
-from urllib.error import HTTPError
+from urllib.request import urlopen, Request
+from urllib.error import HTTPError, URLError
+
+def resource_path(filename):
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, filename)
 
 SCRIPT = "p1CoZQuBy9eP4e8YH0dM5Q"
 SECRET = "6YHiBWbUWEIJMvYt91vuDjOOsCOUOA"
-def download(storage_directory, subreddit_name, sort_type, num_images, log):
+def download(storage_directory, subreddit_name, sort_type, num_images, clear_existing, log):
     try:
         os.makedirs(storage_directory, exist_ok=True)
-        os.chdir(storage_directory)
-        for f in os.listdir(storage_directory):
-            os.remove(f)
-        log("Cleared directory. Connecting to Reddit...\n")
+        if clear_existing:
+            for f in os.listdir(storage_directory):
+                fp = os.path.join(storage_directory, f)
+                if os.path.isfile(fp):
+                    os.remove(fp)
+            log("Cleared directory. Connecting to Reddit...\n")
+        else:
+            log("Keeping existing files. Connecting to Reddit...\n")
 
         reddit = praw.Reddit(
             client_id=SCRIPT,
             client_secret=SECRET,
             user_agent="Image_Py",
+            check_for_updates=False,
         )
         subreddit = reddit.subreddit(subreddit_name)
         feed = {
@@ -30,27 +39,32 @@ def download(storage_directory, subreddit_name, sort_type, num_images, log):
             "rising": subreddit.rising,
         }[sort_type]
 
-        images = [s.url for s in feed(limit=num_images)]
-        log(f"Found {len(images)} posts. Downloading...\n")
+        VALID_EXT = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+        images = [s.url for s in feed(limit=num_images) if any(s.url.lower().endswith(e) for e in VALID_EXT)]
+        log(f"Found {len(images)} direct image links. Downloading...\n")
+
+        existing_count = len([f for f in os.listdir(storage_directory) if os.path.isfile(os.path.join(storage_directory, f))]) if not clear_existing else 0
 
         for i, image in enumerate(images):
             log(f"Downloading {i+1}/{len(images)}: {image}\n")
             try:
-                imgdata = urlopen(image).read()
-                ext = image.split('.')[-1][:4]
-                fname = f"image{i+1}.{ext}"
-                with open(fname, "wb") as f:
-                    f.write(imgdata)
+                req = Request(image, headers={"User-Agent": "Mozilla/5.0"})
+                imgdata = urlopen(req, timeout=10).read()
+                ext = image.split('.')[-1][:4].lower()
+                fname = os.path.join(storage_directory, f"image{existing_count + i+1}.{ext}")
+                with open(fname, "wb") as fh:
+                    fh.write(imgdata)
                 if os.stat(fname).st_size < 200000:
                     os.remove(fname)
-            except HTTPError:
-                log(f"  HTTP Error for {image}\n")
-            except (FileNotFoundError, OSError):
-                log(f"  Invalid link: {image}\n")
+            except (HTTPError, URLError) as e:
+                log(f"  Skipped {image}: {e}\n")
+            except (FileNotFoundError, OSError) as e:
+                log(f"  OS Error {image}: {e}\n")
 
         log("Done!\n")
     except Exception as e:
-        log(f"Error: {e}\n")
+        import traceback
+        log(f"Error: {e}\n{traceback.format_exc()}\n")
 
 
 def build_ui():
@@ -58,14 +72,10 @@ def build_ui():
     root.title("Reddit Image Downloader")
     root.resizable(False, False)
 
-    # Set custom icon - change path to your .ico or .png file
-    icon_path = r"C:\Users\subha\OneDrive\Desktop\Image\HAVI.ico"
+    # Set custom icon
+    icon_path = resource_path("HAVI.ico")
     if os.path.exists(icon_path):
-        if icon_path.endswith(".ico"):
-            root.iconbitmap(icon_path)
-        else:
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
+        root.iconbitmap(icon_path)
 
     pad = {"padx": 10, "pady": 5}
 
@@ -93,15 +103,22 @@ def build_ui():
     ttk.Combobox(root, textvariable=sort_var, values=["hot", "new", "top", "rising"],
                  state="readonly", width=37).grid(row=3, column=1, **pad)
 
+    # Clear existing row
+    clear_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(root, text="Clear existing files before download", variable=clear_var).grid(
+        row=4, column=0, columnspan=2, sticky="w", **pad)
+
     # Log area
     log_box = scrolledtext.ScrolledText(root, width=60, height=15, state="disabled")
-    log_box.grid(row=4, column=0, columnspan=3, **pad)
+    log_box.grid(row=5, column=0, columnspan=3, **pad)
 
     def log(msg):
-        log_box.config(state="normal")
-        log_box.insert(tk.END, msg)
-        log_box.see(tk.END)
-        log_box.config(state="disabled")
+        def _update():
+            log_box.config(state="normal")
+            log_box.insert(tk.END, msg)
+            log_box.see(tk.END)
+            log_box.config(state="disabled")
+        root.after(0, _update)
 
     def start():
         btn.config(state="disabled")
@@ -110,14 +127,14 @@ def build_ui():
         log_box.config(state="disabled")
         threading.Thread(
             target=lambda: [
-                download(dir_var.get(), sub_var.get(), sort_var.get(), num_var.get(), log),
+                download(dir_var.get(), sub_var.get(), sort_var.get(), num_var.get(), clear_var.get(), log),
                 btn.config(state="normal"),
             ],
             daemon=True,
         ).start()
 
     btn = tk.Button(root, text="Start Download", command=start, bg="#4CAF50", fg="white", width=20)
-    btn.grid(row=5, column=1, pady=10)
+    btn.grid(row=6, column=1, pady=10)
 
     root.mainloop()
 
